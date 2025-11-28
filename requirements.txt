@@ -4,4 +4,4 @@ supabase
 python-dotenv
 pytest
 httpx
-
+google-generativeai

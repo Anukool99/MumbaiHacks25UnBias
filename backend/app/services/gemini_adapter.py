@@ -1,29 +1,46 @@
 import os
 from typing import Any, Dict
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load .env file on import so GEMINI_API_KEY is always available
+load_dotenv()
 
 
 class GeminiAdapter:
     """
-    Placeholder adapter for calling the real Gemini API.
-    Not implemented yet — added so the architecture is ready.
+    Real functional Gemini API adapter.
     """
 
     def __init__(self, api_key: str):
         self.api_key = api_key
 
+        genai.configure(api_key=api_key)
+        # Use Gemini 1.5 Pro model; change model name if needed
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
+
     async def generate(self, prompt: str) -> Dict[str, Any]:
         """
-        Would call the actual Gemini API.
-        For now, raise NotImplementedError so it's clear when tests accidentally
-        invoke this branch.
+        Calls the actual Gemini API and returns structured output.
         """
-        raise NotImplementedError("Gemini API integration not implemented yet.")
+        try:
+            response = self.model.generate_content(prompt)
+            text = response.text if hasattr(response, "text") else str(response)
+            return {
+                "mock": False,
+                "raw_response": text
+            }
+        except Exception as e:
+            return {
+                "mock": False,
+                "error": str(e)
+            }
 
 
 class MockGeminiAdapter:
     """
     Deterministic mock adapter used when GEMINI_API_KEY is NOT set.
-    Makes tests stable.
+    Makes tests stable and avoids API cost.
     """
 
     async def generate(self, prompt: str) -> Dict[str, Any]:
@@ -36,10 +53,14 @@ class MockGeminiAdapter:
 
 def get_gemini_adapter():
     """
-    Load the real Gemini adapter only if GEMINI_API_KEY is set.
-    Otherwise return the mock adapter.
+    Returns real Gemini adapter when API key exists;
+    Otherwise returns stable mock adapter.
     """
     api_key = os.getenv("GEMINI_API_KEY")
+
     if api_key:
+        print("🔹 Using REAL Gemini API")
         return GeminiAdapter(api_key)
+
+    print("🔹 Using MOCK Gemini Adapter (no GEMINI_API_KEY found)")
     return MockGeminiAdapter()
