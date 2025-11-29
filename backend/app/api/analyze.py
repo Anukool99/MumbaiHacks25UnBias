@@ -131,19 +131,35 @@ async def analyze(payload: dict):
     adapter = get_gemini_adapter()
 
     prompt = (
-        f"Analyze political framing severity.\n\n"
-        f"TEXT:\n{article['content']}\n\n"
-        f"SPANS:\n{spans_json}\n\n"
-        f"ANGLE:\n{angle_json}\n\n"
-        f"SPECTRUM:\n{spectrum_json}\n\n"
+        "Analyze the political framing severity and detect any additional biases or angles "
+        "that may NOT be reflected in the provided scores.\n\n"
+        "Your tasks:\n"
+        "1. Evaluate the text for political framing, slant, tone, or ideological bias.\n"
+        "2. Compare your assessment with the provided SPANS, ANGLE, and SPECTRUM scores.\n"
+        "3. Identify ANY missing biases, framings, or implicit signals that these scores may have overlooked.\n"
+        "4. Provide a concise explanation of:\n"
+        "   - What biases are present in the text.\n"
+        "   - Which of those biases appear **absent or underrepresented** in the given scores.\n"
+        "5. Output your analysis as structured JSON:\n"
+        "{\n"
+        '  "detected_biases": [...],\n'
+        '  "missing_or_underrepresented_biases": [...],\n'
+        '  "notes": "Short explanation."\n'
+        "}\n\n"
+        "TEXT:\n"
+        f"{article['content']}\n\n"
+        "SPANS:\n"
+        f"{spans_json}\n\n"
+        "ANGLE:\n"
+        f"{angle_json}\n\n"
+        "SPECTRUM:\n"
+        f"{spectrum_json}\n\n"
     )
 
     first_pass = await adapter.generate(prompt)
-    second_pass = await adapter.generate(prompt)
 
     reflection = {
         "first": first_pass,
-        "second": second_pass,
     }
 
     # -----------------------------
