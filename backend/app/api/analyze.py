@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID
 import httpx
 import os
+import json
 
 from app.models.db import supabase
 from app.services.gemini_adapter import get_gemini_adapter
@@ -114,12 +115,13 @@ async def analyze(payload: dict):
 
     # STEP 7 — Save full analysis
     analysis_res = supabase.table("analyses").insert({
-        "article_id": article_id,
-        "spans": spans_json,
-        "angle": angle_json,
-        "spectrum": spectrum_json,
-        "gemini_reflection": reflection,
-    }).execute()
+    "article_id": article_id,
+    "spans": json.dumps(spans_json),
+    "angle": json.dumps(angle_json),
+    "spectrum": json.dumps(spectrum_json),
+    "gemini_reflection": json.dumps(reflection),
+}).execute()
+
     analysis_id = analysis_res.data[0]["id"]
 
     # STEP 8 — Response
