@@ -3,11 +3,15 @@ from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
 import httpx
+import os  # added
 
 from app.models.db import supabase
 from app.services.gemini_adapter import get_gemini_adapter
 
 router = APIRouter()
+
+# get base url from env instead of hardcoding
+API_BASE = os.getenv("INTERNAL_API_BASE", "http://localhost:8000").rstrip("/")
 
 
 # ---------------------------
@@ -76,7 +80,7 @@ async def analyze(payload: dict):
 
     async with httpx.AsyncClient() as client:
         spans_resp = await client.post(
-            "http://localhost:8000/api/spans",
+            f"{API_BASE}/api/spans",
             json={"text": article["content"]}
         )
     spans_json = spans_resp.json()
@@ -87,7 +91,7 @@ async def analyze(payload: dict):
 
     async with httpx.AsyncClient() as client:
         angle_resp = await client.post(
-            "http://localhost:8000/api/angle",
+            f"{API_BASE}/api/angle",
             json={"text": article["content"]}
         )
     angle_json = angle_resp.json()
@@ -107,7 +111,7 @@ async def analyze(payload: dict):
 
     async with httpx.AsyncClient() as client:
         spectrum_resp = await client.post(
-            "http://localhost:8000/api/political-spectrum",
+            f"{API_BASE}/api/political-spectrum",
             json={"text": article["content"]}
         )
     spectrum_json = spectrum_resp.json()
