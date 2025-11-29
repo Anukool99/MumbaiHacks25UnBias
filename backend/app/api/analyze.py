@@ -3,20 +3,17 @@ from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
 import httpx
-import os  # added
+import os
 
 from app.models.db import supabase
 from app.services.gemini_adapter import get_gemini_adapter
 
 router = APIRouter()
 
-# get base url from env instead of hardcoding
-# API_BASE = os.getenv("INTERNAL_API_BASE", "http://localhost:8000").rstrip("/")
+# Base URL for internal API calls (local or deployment)
+INTERNAL_API_BASE = os.getenv("INTERNAL_API_BASE", "http://localhost:8000").rstrip("/")
+print(f"🔧 INTERNAL_API_BASE = {INTERNAL_API_BASE}")
 
-
-# ---------------------------
-# Input Models
-# ---------------------------
 
 class AnalyzeById(BaseModel):
     article_id: UUID
@@ -29,39 +26,19 @@ class AnalyzeRaw(BaseModel):
     published_at: Optional[str] = None
 
 
-# ---------------------------
-# /api/analyze
-# ---------------------------
-
 @router.post("/analyze")
 async def analyze(payload: dict):
-    """
-    Unified analyze endpoint that:
-      - Loads or creates article
-      - Calls spans, angle, political spectrum
-      - Generates Gemini reflection pass
-      - Stores spans + fingerprints + analysis in DB
-      - Returns analysis IDs + JSON
-    """
+    """Unified analyze endpoint"""
 
-    # ------------------------------------------------------------------
     # STEP 1 — Load or create article
-    # ------------------------------------------------------------------
-
     if "article_id" in payload:
-        # Load Article
         article_id = payload["article_id"]
-
         res = supabase.table("articles").select("*").eq("id", str(article_id)).execute()
         if not res.data:
             raise HTTPException(404, "Article not found")
-
         article = res.data[0]
-
     else:
-        # Create Article
         raw = AnalyzeRaw(**payload)
-
         insert_res = supabase.table("articles").insert({
             "title": raw.title or "Untitled",
             "content": raw.text,
@@ -74,29 +51,22 @@ async def analyze(payload: dict):
         article = insert_res.data[0]
         article_id = article["id"]
 
-    # -----------------------------
-    # STEP 2 — Call /api/spans
-    # -----------------------------
-
+    # STEP 2 — Call /spans
     async with httpx.AsyncClient(timeout=60.0) as client:
         spans_resp = await client.post(
-            f"http://localhost:8000/api/spans",
-            json={"text": article["content"]}
+            f"{INTERNAL_API_BASE}/api/spans",
+            json={"text": article["content"]},
         )
     spans_json = spans_resp.json()
 
-    # -----------------------------
-    # STEP 3 — Call /api/angle
-    # -----------------------------
-
+    # STEP 3 — Call /angle
     async with httpx.AsyncClient(timeout=60.0) as client:
         angle_resp = await client.post(
-            f"http://localhost:8000/api/angle",
-            json={"text": article["content"]}
+            f"{INTERNAL_API_BASE}/api/angle",
+            json={"text": article["content"]},
         )
     angle_json = angle_resp.json()
 
-    # Store angle fingerprint
     angle_fp_res = supabase.table("angle_fingerprints").insert({
         "article_id": article_id,
         "patterns": angle_json.get("framing_patterns", []),
@@ -105,14 +75,11 @@ async def analyze(payload: dict):
     }).execute()
     angle_fp_id = angle_fp_res.data[0]["id"]
 
-    # -----------------------------
-    # STEP 4 — Call /api/political-spectrum
-    # -----------------------------
-
+    # STEP 4 — Call /political-spectrum
     async with httpx.AsyncClient(timeout=60.0) as client:
         spectrum_resp = await client.post(
-            f"http://localhost:8000/api/political-spectrum",
-            json={"text": article["content"]}
+            f"{INTERNAL_API_BASE}/api/political-spectrum",
+            json={"text": article["content"]},
         )
     spectrum_json = spectrum_resp.json()
 
@@ -124,48 +91,18 @@ async def analyze(payload: dict):
     }).execute()
     spectrum_fp_id = spectrum_fp_res.data[0]["id"]
 
-    # -----------------------------
-    # STEP 5 — Gemini Reflection Pass
-    # -----------------------------
-
+    # STEP 5 — Gemini Reflection
     adapter = get_gemini_adapter()
-
     prompt = (
-        "Analyze the political framing severity and detect any additional biases or angles "
-        "that may NOT be reflected in the provided scores.\n\n"
-        "Your tasks:\n"
-        "1. Evaluate the text for political framing, slant, tone, or ideological bias.\n"
-        "2. Compare your assessment with the provided SPANS, ANGLE, and SPECTRUM scores.\n"
-        "3. Identify ANY missing biases, framings, or implicit signals that these scores may have overlooked.\n"
-        "4. Provide a concise explanation of:\n"
-        "   - What biases are present in the text.\n"
-        "   - Which of those biases appear **absent or underrepresented** in the given scores.\n"
-        "5. Output your analysis as structured JSON:\n"
-        "{\n"
-        '  "detected_biases": [...],\n'
-        '  "missing_or_underrepresented_biases": [...],\n'
-        '  "notes": "Short explanation."\n'
-        "}\n\n"
-        "TEXT:\n"
-        f"{article['content']}\n\n"
-        "SPANS:\n"
-        f"{spans_json}\n\n"
-        "ANGLE:\n"
-        f"{angle_json}\n\n"
-        "SPECTRUM:\n"
-        f"{spectrum_json}\n\n"
+        "Analyze political framing severity and detect missing biases.\n\n"
+        f"TEXT:\n{article['content']}\n\n"
+        f"SPANS:\n{spans_json}\n\n"
+        f"ANGLE:\n{angle_json}\n\n"
+        f"SPECTRUM:\n{spectrum_json}\n\n"
     )
+    reflection = {"first": await adapter.generate(prompt)}
 
-    first_pass = await adapter.generate(prompt)
-
-    reflection = {
-        "first": first_pass,
-    }
-
-    # -----------------------------
-    # STEP 6 — Store spans in DB
-    # -----------------------------
-
+    # STEP 6 — Save spans in DB
     for span in spans_json.get("spans", []):
         supabase.table("spans").insert({
             "article_id": article_id,
@@ -175,23 +112,17 @@ async def analyze(payload: dict):
             "end_index": span.get("end"),
         }).execute()
 
-    # -----------------------------
-    # STEP 7 — Create analysis record
-    # -----------------------------
-
+    # STEP 7 — Save full analysis
     analysis_res = supabase.table("analyses").insert({
         "article_id": article_id,
         "spans": spans_json,
         "angle": angle_json,
+        "spectrum": spectrum_json,
         "gemini_reflection": reflection,
     }).execute()
-
     analysis_id = analysis_res.data[0]["id"]
 
-    # -----------------------------
-    # STEP 8 — Return final response
-    # -----------------------------
-
+    # STEP 8 — Response
     return {
         "article_id": article_id,
         "analysis_id": analysis_id,
