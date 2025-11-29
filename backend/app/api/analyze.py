@@ -11,7 +11,7 @@ from app.services.gemini_adapter import get_gemini_adapter
 router = APIRouter()
 
 # get base url from env instead of hardcoding
-API_BASE = os.getenv("INTERNAL_API_BASE", "http://localhost:8000").rstrip("/")
+# API_BASE = os.getenv("INTERNAL_API_BASE", "http://localhost:8000").rstrip("/")
 
 
 # ---------------------------
@@ -78,9 +78,9 @@ async def analyze(payload: dict):
     # STEP 2 — Call /api/spans
     # -----------------------------
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         spans_resp = await client.post(
-            f"{API_BASE}/api/spans",
+            f"http://localhost:8000/api/spans",
             json={"text": article["content"]}
         )
     spans_json = spans_resp.json()
@@ -89,9 +89,9 @@ async def analyze(payload: dict):
     # STEP 3 — Call /api/angle
     # -----------------------------
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         angle_resp = await client.post(
-            f"{API_BASE}/api/angle",
+            f"http://localhost:8000/api/angle",
             json={"text": article["content"]}
         )
     angle_json = angle_resp.json()
@@ -109,9 +109,9 @@ async def analyze(payload: dict):
     # STEP 4 — Call /api/political-spectrum
     # -----------------------------
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         spectrum_resp = await client.post(
-            f"{API_BASE}/api/political-spectrum",
+            f"http://localhost:8000/api/political-spectrum",
             json={"text": article["content"]}
         )
     spectrum_json = spectrum_resp.json()
